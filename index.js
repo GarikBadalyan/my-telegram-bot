@@ -32,5 +32,6 @@ bot.catch((error) => {
     console.error('Bot error:', error);
 });
 
+
 // Запуск бота
 bot.startPolling().catch(console.error);
