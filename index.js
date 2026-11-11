@@ -9,6 +9,7 @@ if (!token) {
     throw new Error('BOT_TOKEN is missing in .env file');
 }
 
+
 const bot = new Bot(token);
 
 // Команда /start
