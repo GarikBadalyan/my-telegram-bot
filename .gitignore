@@ -1,2 +1,4 @@
 node_modules/
 .env
+# База задач (SQLite) — личные данные пользователей, в git не нужна
+storage/
