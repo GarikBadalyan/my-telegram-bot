@@ -4,6 +4,7 @@ require('dotenv').config();
 const { Bot } = require('node-telegram-bot-api');
 const { commands } = require('./src/commands');
 const { openDatabase, closeDatabase } = require('./src/db/database');
+const { unknownCommandReply } = require('./src/utils/unknownCommand');
 
 const token = process.env.BOT_TOKEN;
 
@@ -21,6 +22,7 @@ const bot = new Bot(token);
 for (const cmd of commands) {
     bot.command(cmd.command, cmd.handler);
 }
+const commandNames = commands.map((cmd) => cmd.command);
 
 // Собираем обработчики кнопок всех команд в одну таблицу: callback_data → функция
 const callbackHandlers = {};
@@ -57,7 +59,16 @@ bot.on('callback_query', async (ctx) => {
 bot.on('message', async (ctx) => {
     const message = ctx.message?.text;
 
-    if (!message || message.startsWith('/')) {
+    if (!message) {
+        return;
+    }
+
+    // Сюда доходят только команды, которых нет у бота (известные обработаны выше)
+    if (message.startsWith('/')) {
+        const reply = unknownCommandReply(ctx, commandNames);
+        if (reply) {
+            await ctx.reply(reply);
+        }
         return;
     }
 

@@ -13,6 +13,7 @@ const commands = [
     require('./menu'),
     require('./time'),
     require('./weather'),
+    require('./rate'),
     require('./ask'),
     require('./calc'),
     require('./joke'),
