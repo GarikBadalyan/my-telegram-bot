@@ -125,6 +125,22 @@ function formatDays(place, forecast) {
     return lines.join('\n');
 }
 
+// Для утренней сводки: погода сейчас + чего ждать днём
+function formatToday(place, forecast) {
+    const c = forecast.current;
+    const d = forecast.daily;
+    return [
+        `🌤 Погода — ${placeName(place)}`,
+        `Сейчас: ${describe(c.weather_code)}, ${temp(c.temperature_2m)} (ощущается как ${temp(c.apparent_temperature)})`,
+        `Днём: от ${temp(d.temperature_2m_min[0])} до ${temp(d.temperature_2m_max[0])}, ` +
+            `☔ ${d.precipitation_probability_max[0] ?? '—'}%, 💨 до ${d.wind_speed_10m_max[0].toFixed(1)} м/с`,
+    ].join('\n');
+}
+
+async function getTodayText(place) {
+    return formatToday(place, await getForecast(place));
+}
+
 const FORMATTERS = { now: formatNow, tomorrow: formatTomorrow, days: formatDays };
 const MODES = Object.keys(FORMATTERS);
 
@@ -135,4 +151,4 @@ async function getWeatherText(place, mode = 'now') {
     return format(place, await getForecast(place));
 }
 
-module.exports = { findPlace, getPlace, getWeatherText, MODES, DEFAULT_CITY, FORECAST_DAYS };
+module.exports = { findPlace, getPlace, getWeatherText, getTodayText, MODES, DEFAULT_CITY, FORECAST_DAYS };

@@ -129,6 +129,29 @@ function formatMoney(n, exact = false) {
 
 const currencyName = (code) => NAMES[code] ?? code;
 
+// «🕒 Курс на 12.11.2026, 04:02 · источник: …» — дата по Еревану
+function sourceLine(updatedAt) {
+    const date = new Intl.DateTimeFormat('ru-RU', {
+        timeZone: 'Asia/Yerevan',
+        dateStyle: 'short',
+        timeStyle: 'short',
+    }).format(updatedAt);
+    return `🕒 Курс на ${date} · источник: exchangerate-api.com`;
+}
+
+// Курс драма к популярным валютам (для /rate без параметров и утренней сводки)
+async function amdRatesText() {
+    const lines = ['💱 Курс драма сегодня:', ''];
+    let updatedAt;
+    for (const code of ['USD', 'EUR', 'RUB', 'GEL']) {
+        const r = await convert(1, code, 'AMD');
+        updatedAt = r.updatedAt;
+        lines.push(`1 ${code} = ${formatMoney(r.result)} AMD`);
+    }
+    lines.push('', sourceLine(updatedAt));
+    return lines.join('\n');
+}
+
 module.exports = {
     CurrencyError,
     parseQuery,
@@ -136,6 +159,8 @@ module.exports = {
     getRates,
     formatMoney,
     currencyName,
+    sourceLine,
+    amdRatesText,
     // для тестов: подменить или сбросить кэш курсов
     _setCache: (value) => {
         cache = value;

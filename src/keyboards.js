@@ -5,6 +5,7 @@ const { InlineKeyboardBuilder } = require('node-telegram-bot-api');
 function mainMenu() {
     return new InlineKeyboardBuilder()
         .text('📝 Мои задачи', 'tasks')
+        .text('☀️ Сводка', 'morning')
         .row()
         .text('📋 Помощь', 'help')
         .text('ℹ️ О боте', 'about')

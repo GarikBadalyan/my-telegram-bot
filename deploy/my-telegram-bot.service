@@ -1,0 +1,39 @@
+# Служба systemd (пользовательская) для Telegram-бота.
+#
+# Установка (без sudo):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/my-telegram-bot.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now my-telegram-bot
+#   loginctl enable-linger $USER     # работать и без входа в систему, и после перезагрузки
+#
+# Управление:
+#   systemctl --user status my-telegram-bot      # работает ли
+#   systemctl --user restart my-telegram-bot     # перезапуск (после изменений в коде)
+#   systemctl --user stop my-telegram-bot        # остановить
+#   journalctl --user -u my-telegram-bot -f      # логи в реальном времени
+
+[Unit]
+Description=My Telegram bot (/var/www/my-telegram-bot111)
+# Если бот падает чаще 10 раз за 5 минут — значит, что-то сломано всерьёз, не крутимся вечно
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/my-telegram-bot111
+# Node 24 из nvm (%h — домашняя папка). При обновлении Node поменяй версию здесь
+# и выполни: systemctl --user daemon-reload && systemctl --user restart my-telegram-bot
+ExecStart=%h/.nvm/versions/node/v24.22.2/bin/node index.js
+Environment=NODE_ENV=production
+
+# Упал — поднять через 10 секунд
+Restart=always
+RestartSec=10
+
+# Остановка: бот получает SIGTERM, сам закрывает базу; ждём до 20 секунд
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

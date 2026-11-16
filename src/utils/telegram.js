@@ -23,4 +23,28 @@ function commandArgs(ctx) {
     return text.replace(/^\/\S+/, '').trim();
 }
 
-module.exports = { editPressedMessage, commandArgs };
+const TELEGRAM_MESSAGE_LIMIT = 4000; // у Telegram лимит 4096, оставляем запас
+
+// Длинный текст отправляем несколькими сообщениями, не разрывая строки.
+// Строку длиннее лимита (без переносов) режем по лимиту.
+async function replyLong(ctx, lines) {
+    const pieces = [];
+    for (const line of lines) {
+        for (let i = 0; i < Math.max(line.length, 1); i += TELEGRAM_MESSAGE_LIMIT) {
+            pieces.push(line.slice(i, i + TELEGRAM_MESSAGE_LIMIT));
+        }
+    }
+    let chunk = '';
+    for (const piece of pieces) {
+        if (chunk && chunk.length + piece.length + 1 > TELEGRAM_MESSAGE_LIMIT) {
+            await ctx.reply(chunk);
+            chunk = '';
+        }
+        chunk += (chunk ? '\n' : '') + piece;
+    }
+    if (chunk.trim()) {
+        await ctx.reply(chunk);
+    }
+}
+
+module.exports = { editPressedMessage, commandArgs, replyLong, TELEGRAM_MESSAGE_LIMIT };

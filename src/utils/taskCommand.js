@@ -1,9 +1,7 @@
 // Общее для всех команд менеджера задач: проверка чата, обработка ошибок, форматирование.
 
 const { TaskError } = require('../services/tasks');
-const { commandArgs } = require('./telegram');
-
-const TELEGRAM_MESSAGE_LIMIT = 4000; // у Telegram лимит 4096, оставляем запас
+const { commandArgs, replyLong } = require('./telegram');
 
 // Оборачивает обработчик команды:
 //  - задачи личные, поэтому работаем только в личном чате с ботом;
@@ -70,19 +68,5 @@ function formatTask(task) {
     return `${mark} #${task.id} — ${task.title}\n      🗓 ${formatDate(task.created_at)}`;
 }
 
-// Длинный список отправляем несколькими сообщениями, не разрывая строки
-async function replyLong(ctx, lines) {
-    let chunk = '';
-    for (const line of lines) {
-        if (chunk && chunk.length + line.length + 1 > TELEGRAM_MESSAGE_LIMIT) {
-            await ctx.reply(chunk);
-            chunk = '';
-        }
-        chunk += (chunk ? '\n' : '') + line;
-    }
-    if (chunk) {
-        await ctx.reply(chunk);
-    }
-}
-
+// replyLong переехал в utils/telegram.js (нужен не только задачам); реэкспорт — для старых импортов
 module.exports = { taskCommand, taskCallback, formatTask, replyLong };

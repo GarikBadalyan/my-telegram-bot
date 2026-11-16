@@ -5,6 +5,8 @@ const { Bot } = require('node-telegram-bot-api');
 const { commands } = require('./src/commands');
 const { openDatabase, closeDatabase } = require('./src/db/database');
 const { unknownCommandReply } = require('./src/utils/unknownCommand');
+const { startMorningScheduler } = require('./src/services/morning');
+const aiChat = require('./src/services/aiChat');
 
 const token = process.env.BOT_TOKEN;
 
@@ -72,7 +74,18 @@ bot.on('message', async (ctx) => {
         return;
     }
 
-    await ctx.reply(`Ты написал: ${message}`);
+    // Обычный текст в личном чате — вопрос к ИИ. В группах молчим: иначе бот отвечал бы
+    // на каждое сообщение группы (и каждый ответ стоит денег).
+    if (ctx.chat?.type !== 'private') {
+        return;
+    }
+
+    // Не ждём ответа ИИ здесь (это несколько секунд): пока он думает,
+    // бот продолжает отвечать на другие сообщения и команды
+    aiChat.handleMessage(ctx, message).catch((error) => {
+        console.error('AI chat error:', error);
+        ctx.reply('😔 Что-то пошло не так. Попробуй ещё раз.').catch(() => {});
+    });
 });
 
 // Обработка ошибок
@@ -88,16 +101,38 @@ bot.api
     })
     .catch(console.error);
 
+let stopping = false;
+
 // Запуск бота
-const polling = bot.startPolling().catch(console.error);
+const polling = bot.startPolling().then(
+    () => {
+        if (!stopping) failAndExit('Опрос Telegram неожиданно завершился');
+    },
+    (error) => {
+        if (!stopping) failAndExit('Опрос Telegram остановился с ошибкой', error);
+    },
+);
+
+// Если бот перестал получать сообщения (неверный токен, второй запущенный бот и т. п.),
+// завершаем процесс с ошибкой. Иначе таймер сводки держал бы «мёртвого» бота живым,
+// а служба (systemd/pm2) не узнала бы, что его пора перезапустить.
+function failAndExit(reason, error) {
+    console.error(`${reason}. Завершаю процесс, чтобы служба его перезапустила.`, error ?? '');
+    stopMorning();
+    closeDatabase();
+    process.exit(1);
+}
+
+// Утренняя сводка: проверка расписания раз в минуту
+const stopMorning = startMorningScheduler(bot.api);
 
 // Аккуратная остановка (Ctrl+C, перезапуск сервиса): дожидаемся остановки бота
 // и закрываем базу, чтобы все записи точно сохранились на диск
-let stopping = false;
 async function shutdown(signal) {
     if (stopping) return;
     stopping = true;
     console.log(`${signal}: останавливаю бота...`);
+    stopMorning();
     bot.stop();
     await polling;
     closeDatabase();

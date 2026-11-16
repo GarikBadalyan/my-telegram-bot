@@ -21,6 +21,14 @@ const SCHEMA = `
     );
 
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks (user_id, completed);
+
+    -- Подписки на утреннюю сводку: один чат — одна строка
+    CREATE TABLE IF NOT EXISTS morning_subscriptions (
+        chat_id        INTEGER PRIMARY KEY,
+        enabled        INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+        last_sent_date TEXT,                 -- «2026-11-12» по Еревану: когда сводка уже ушла
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
 `;
 
 let db;

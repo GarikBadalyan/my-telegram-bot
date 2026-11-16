@@ -1,6 +1,8 @@
 const { mainMenu } = require('../keyboards');
 
-const ABOUT_TEXT = 'ℹ️ Я простой Telegram-бот: повторяю твои сообщения и отвечаю на команды.';
+const ABOUT_TEXT =
+    'ℹ️ Я Telegram-бот: отвечаю на вопросы с помощью ИИ — просто напиши мне, ' +
+    'а ещё веду задачи, показываю погоду, курсы валют и присылаю утреннюю сводку. Все команды: /help';
 
 module.exports = {
     command: 'menu',

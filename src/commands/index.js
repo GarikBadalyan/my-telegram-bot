@@ -14,6 +14,8 @@ const commands = [
     require('./time'),
     require('./weather'),
     require('./rate'),
+    require('./morning'),
+    require('./reset'),
     require('./ask'),
     require('./calc'),
     require('./joke'),
