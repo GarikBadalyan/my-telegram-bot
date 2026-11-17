@@ -27,9 +27,24 @@ const SCHEMA = `
         chat_id        INTEGER PRIMARY KEY,
         enabled        INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
         last_sent_date TEXT,                 -- «2026-11-12» по Еревану: когда сводка уже ушла
-        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+        created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        weekdays_only  INTEGER NOT NULL DEFAULT 0 CHECK (weekdays_only IN (0, 1)) -- 1 — только пн–пт
     );
 `;
+
+// Обновления структуры для баз, созданных старой версией бота
+// (CREATE TABLE IF NOT EXISTS не добавляет новые колонки в уже существующую таблицу)
+function migrate(database) {
+    const columns = database
+        .prepare('PRAGMA table_info(morning_subscriptions)')
+        .all()
+        .map((c) => c.name);
+    if (!columns.includes('weekdays_only')) {
+        database.exec(
+            'ALTER TABLE morning_subscriptions ADD COLUMN weekdays_only INTEGER NOT NULL DEFAULT 0 CHECK (weekdays_only IN (0, 1))',
+        );
+    }
+}
 
 let db;
 
@@ -47,6 +62,7 @@ function openDatabase(file = process.env.DB_PATH || DEFAULT_DB_PATH) {
     db.exec('PRAGMA journal_mode = WAL;');
     db.exec('PRAGMA busy_timeout = 5000;');
     db.exec(SCHEMA);
+    migrate(db);
     return db;
 }
 

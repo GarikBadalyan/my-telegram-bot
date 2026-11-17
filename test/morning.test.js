@@ -40,14 +40,14 @@ after(() => closeDatabase());
 beforeEach(() => getDb().exec('DELETE FROM morning_subscriptions'));
 
 test('время по Еревану', () => {
-    assert.deepEqual(morning.yerevanNow(new Date('2026-11-12T07:00:00Z')), { date: DAY1, minutes: 11 * 60 });
+    assert.deepEqual(morning.yerevanNow(new Date('2026-11-12T07:00:00Z')), { date: DAY1, minutes: 11 * 60, weekday: 4 }); // четверг
     // 20:30 UTC — в Ереване уже следующий день, 00:30
-    assert.deepEqual(morning.yerevanNow(new Date('2026-11-12T20:30:00Z')), { date: DAY2, minutes: 30 });
+    assert.deepEqual(morning.yerevanNow(new Date('2026-11-12T20:30:00Z')), { date: DAY2, minutes: 30, weekday: 5 });
 });
 
 test('подписка до 11:00 — сводка сегодня, после — завтра', () => {
-    assert.equal(morning.subscribe(ALICE, at(DAY1, '09:00')), 'today');
-    assert.equal(morning.subscribe(BOB, at(DAY1, '11:30')), 'tomorrow');
+    assert.equal(morning.subscribe(ALICE, at(DAY1, '09:00')), 'сегодня');
+    assert.equal(morning.subscribe(BOB, at(DAY1, '11:30')), 'завтра');
     assert.ok(morning.isSubscribed(ALICE));
     morning.unsubscribe(ALICE);
     assert.ok(!morning.isSubscribed(ALICE));
@@ -206,12 +206,12 @@ test('/morning: включить, выключить, кнопка в меню',
 
     await cmd.handler(ctx());
     assert.match(last.text, /Утренняя сводка: выключена/);
-    assert.deepEqual(buttons(), ['🔔 Включить→morning:on', '👀 Показать сейчас→morning:preview']);
+    assert.deepEqual(buttons(), ['🔔 Включить→morning:on', '👀 Показать сейчас→morning:preview', '📅 Только будни→morning:weekdays']);
 
     await cmd.callbacks.morning(ctx('morning:on'), 'on');
     assert.match(last.text, /Готово! Первая сводка — (сегодня|завтра) в 11:00[\s\S]*включена ✅/);
     assert.ok(morning.isSubscribed(ALICE));
-    assert.deepEqual(buttons(), ['🔕 Выключить→morning:off', '👀 Показать сейчас→morning:preview']);
+    assert.deepEqual(buttons(), ['🔕 Выключить→morning:off', '👀 Показать сейчас→morning:preview', '📅 Только будни→morning:weekdays']);
 
     await cmd.callbacks.morning(ctx('morning:off'), 'off');
     assert.match(last.text, /Сводка выключена/);
@@ -222,4 +222,108 @@ test('/morning: включить, выключить, кнопка в меню',
 
     const { mainMenu } = require('../src/keyboards');
     assert.ok(mainMenu().inline_keyboard.flat().some((b) => b.text === '☀️ Сводка' && b.callback_data === 'morning'));
+});
+
+// ---------- Только будни ----------
+
+// 2026-11-12 — четверг, 13 — пятница, 14 — суббота, 15 — воскресенье, 16 — понедельник
+const FRI = '2026-11-13';
+const SAT = '2026-11-14';
+const SUN = '2026-11-15';
+const MON = '2026-11-16';
+
+test('будни: в субботу и воскресенье не шлём, в понедельник — шлём', async () => {
+    morning.subscribe(ALICE, at(DAY1, '08:00'));
+    morning.setWeekdaysOnly(ALICE, true);
+    morning.subscribe(BOB, at(DAY1, '08:00')); // Боб — каждый день
+    const api = fakeApi();
+
+    await tick(api, at(FRI, '11:00'));
+    await tick(api, at(SAT, '11:00'));
+    await tick(api, at(SUN, '11:00'));
+    await tick(api, at(MON, '11:00'));
+
+    const days = (id) => api.sent.filter((m) => m.chat_id === id).length;
+    assert.equal(days(ALICE), 2, 'Алиса: пятница и понедельник');
+    assert.equal(days(BOB), 4, 'Боб: все четыре дня');
+});
+
+test('будни: «следующая сводка — …» учитывает выходные', () => {
+    morning.subscribe(ALICE, at(DAY1, '08:00'));
+    morning.setWeekdaysOnly(ALICE, true);
+    assert.equal(morning.nextDelivery(ALICE, at(FRI, '10:00')), 'сегодня');
+    assert.equal(morning.nextDelivery(ALICE, at(FRI, '12:00')), 'в понедельник');
+    assert.equal(morning.nextDelivery(ALICE, at(SAT, '09:00')), 'в понедельник');
+    assert.equal(morning.nextDelivery(ALICE, at(SUN, '09:00')), 'завтра');
+    assert.equal(morning.nextDelivery(ALICE, at(DAY1, '12:00')), 'завтра'); // чт → пт
+
+    morning.setWeekdaysOnly(ALICE, false);
+    assert.equal(morning.nextDelivery(ALICE, at(FRI, '12:00')), 'завтра'); // каждый день → в субботу
+
+    // Подписался в пятницу после 11:00 с режимом «будни» — первая придёт в понедельник
+    morning.setWeekdaysOnly(BOB, true);
+    assert.equal(morning.subscribe(BOB, at(FRI, '11:30')), 'в понедельник');
+});
+
+test('будни: настройку можно выбрать до включения — сводка от этого не включается', async () => {
+    morning.setWeekdaysOnly(ALICE, true);
+    assert.ok(!morning.isSubscribed(ALICE));
+    assert.ok(morning.isWeekdaysOnly(ALICE));
+    const api = fakeApi();
+    await tick(api, at(MON, '11:00'));
+    assert.equal(api.sent.length, 0);
+
+    morning.subscribe(ALICE, at(MON, '08:00'));
+    assert.ok(morning.isWeekdaysOnly(ALICE), 'режим сохранился после включения');
+    morning.unsubscribe(ALICE);
+    assert.ok(morning.isWeekdaysOnly(ALICE), 'и после выключения');
+});
+
+test('/morning: кнопка «Только будни» ↔ «Каждый день»', async () => {
+    const cmd = commands.find((c) => c.command === 'morning');
+    let last;
+    const ctx = () => ({
+        chatId: ALICE,
+        callbackQuery: { data: 'x', message: { message_id: 1, chat: { id: ALICE } } },
+        reply: async (text, o) => (last = { text, keyboard: o?.reply_markup }),
+        api: { editMessageText: async ({ text, reply_markup }) => (last = { text, keyboard: reply_markup }) },
+    });
+    const buttons = () => last.keyboard.inline_keyboard.flat().map((b) => b.callback_data);
+
+    await cmd.callbacks.morning(ctx(), 'on');
+    await cmd.callbacks.morning(ctx(), 'weekdays');
+    assert.match(last.text, /сводка по будням \(пн–пт\) в 11:00/);
+    assert.match(last.text, /Когда: по будням \(пн–пт\)/);
+    assert.match(last.text, /Следующая — (сегодня|завтра|в понедельник) в 11:00/);
+    assert.ok(buttons().includes('morning:daily'));
+
+    await cmd.callbacks.morning(ctx(), 'daily');
+    assert.match(last.text, /Когда: каждый день/);
+    assert.ok(buttons().includes('morning:weekdays'));
+});
+
+test('база: старая таблица подписок получает новую колонку при запуске', () => {
+    const { DatabaseSync } = require('node:sqlite');
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bot-')), 'old.db');
+
+    // База, созданная прошлой версией бота (без weekdays_only), с одной подпиской
+    const old = new DatabaseSync(file);
+    old.exec(`CREATE TABLE morning_subscriptions (chat_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1,
+              last_sent_date TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+              INSERT INTO morning_subscriptions (chat_id, enabled) VALUES (555, 1);`);
+    old.close();
+
+    closeDatabase();
+    try {
+        openDatabase(file);
+        const row = getDb().prepare('SELECT chat_id, enabled, weekdays_only FROM morning_subscriptions').get();
+        assert.deepEqual({ ...row }, { chat_id: 555, enabled: 1, weekdays_only: 0 }, 'подписка сохранилась, режим — каждый день');
+    } finally {
+        closeDatabase();
+        fs.rmSync(path.dirname(file), { recursive: true, force: true });
+        openDatabase(':memory:');
+    }
 });

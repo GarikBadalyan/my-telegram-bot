@@ -1,4 +1,5 @@
-// Утренняя сводка: каждый день в 11:00 по Еревану — погода и курс драма.
+// Утренняя сводка: в 11:00 по Еревану — погода и курс драма.
+// Каждый день или только по будням (пн–пт) — выбирает подписчик.
 //
 // Как работает расписание:
 //  - раз в минуту проверяем: сейчас между 11:00 и 13:00 по Еревану?
@@ -19,7 +20,10 @@ const PAUSE_BETWEEN_MESSAGES_MS = 50; // бережём лимиты Telegram (~
 
 const SEND_TIME_TEXT = '11:00';
 
-// Текущие дата и время в Ереване: { date: '2026-11-12', minutes: 660 }
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Текущие дата, время и день недели в Ереване:
+// { date: '2026-11-12', minutes: 660, weekday: 4 } (0 — воскресенье, 6 — суббота)
 function yerevanNow(now = new Date()) {
     const parts = Object.fromEntries(
         new Intl.DateTimeFormat('en-CA', {
@@ -29,6 +33,7 @@ function yerevanNow(now = new Date()) {
             day: '2-digit',
             hour: '2-digit',
             minute: '2-digit',
+            weekday: 'short',
             hourCycle: 'h23',
         })
             .formatToParts(now)
@@ -37,10 +42,12 @@ function yerevanNow(now = new Date()) {
     return {
         date: `${parts.year}-${parts.month}-${parts.day}`,
         minutes: Number(parts.hour) * 60 + Number(parts.minute),
+        weekday: WEEKDAYS.indexOf(parts.weekday),
     };
 }
 
 const isSendWindow = (minutes) => minutes >= SEND_AT && minutes < SEND_UNTIL;
+const isWeekend = (weekday) => weekday === 0 || weekday === 6;
 
 // ---------- Текст сводки ----------
 
@@ -78,17 +85,44 @@ function isSubscribed(chatId) {
     return subscriptions.getSubscription(chatId)?.enabled === true;
 }
 
-// Возвращает, когда придёт первая сводка: 'today' или 'tomorrow'
+function isWeekdaysOnly(chatId) {
+    return subscriptions.getSubscription(chatId)?.weekdays_only === true;
+}
+
+// «в понедельник», «во вторник»… — для «Следующая сводка — …»
+const ON_WEEKDAY = ['в воскресенье', 'в понедельник', 'во вторник', 'в среду', 'в четверг', 'в пятницу', 'в субботу'];
+
+// Когда придёт следующая сводка: «сегодня», «завтра», «в понедельник»…
+function nextDelivery(chatId, now = new Date()) {
+    const sub = subscriptions.getSubscription(chatId);
+    const { date, minutes, weekday } = yerevanNow(now);
+    const allowed = (day) => !(sub?.weekdays_only && isWeekend(day));
+
+    if (allowed(weekday) && minutes < SEND_AT && sub?.last_sent_date !== date) {
+        return 'сегодня';
+    }
+    for (let d = 1; d <= 7; d++) {
+        const day = (weekday + d) % 7;
+        if (allowed(day)) return d === 1 ? 'завтра' : ON_WEEKDAY[day];
+    }
+    return 'завтра';
+}
+
+// Включает сводку и возвращает, когда придёт первая: «сегодня», «завтра», «в понедельник»…
 function subscribe(chatId, now = new Date()) {
     const { date, minutes } = yerevanNow(now);
-    // Подписались после 11:00 — сегодняшнюю не шлём, первая придёт завтра
+    // Подписались после 11:00 — сегодняшнюю не шлём, первая придёт в следующий подходящий день
     const alreadyLate = minutes >= SEND_AT;
     subscriptions.setSubscription(chatId, true, alreadyLate ? date : null);
-    return alreadyLate ? 'tomorrow' : 'today';
+    return nextDelivery(chatId, now);
 }
 
 function unsubscribe(chatId) {
     subscriptions.setSubscription(chatId, false);
+}
+
+function setWeekdaysOnly(chatId, weekdaysOnly) {
+    subscriptions.setWeekdaysOnly(chatId, weekdaysOnly);
 }
 
 // ---------- Рассылка ----------
@@ -111,10 +145,10 @@ async function runMorningTick({
     pauseMs = PAUSE_BETWEEN_MESSAGES_MS,
 } = {}) {
     const result = { sent: 0, disabled: 0, failed: 0, retryLater: 0 };
-    const { date, minutes } = yerevanNow(now);
+    const { date, minutes, weekday } = yerevanNow(now);
     if (!isSendWindow(minutes)) return result;
 
-    const due = subscriptions.listDue(date);
+    const due = subscriptions.listDue(date, isWeekend(weekday));
     if (due.length === 0) return result;
 
     // Текст один на всех — собираем один раз. Если не вышло — повторим через минуту.
@@ -171,8 +205,11 @@ module.exports = {
     yerevanNow,
     buildSummary,
     isSubscribed,
+    isWeekdaysOnly,
+    nextDelivery,
     subscribe,
     unsubscribe,
+    setWeekdaysOnly,
     runMorningTick,
     startMorningScheduler,
 };
